@@ -92,6 +92,7 @@ class Time(datetime):
             minute=minute,
             second=second,
             tzinfo=tzinfo,
+                # or Timezone(),
             microsecond=0
         )
 
@@ -115,6 +116,35 @@ class Time(datetime):
 
     def __repr__(self):
         return f"{type(self).__name__}({self.year}, {self.month}, {self.day}, {self.hour}, {self.minute}, {self.second}, {self.tzinfo}, once={self.once})"
+    
+    def __eq__(self, other):
+        if isinstance(other, datetime):
+            other = other.replace(microsecond=0)
+        return super().__eq__(other)
+
+
+    def __le__(self, other):
+        if isinstance(other, datetime):
+            other = other.replace(microsecond=0)
+        return super().__eq__(other)
+
+    def __lt__(self, other):
+        if isinstance(other, datetime):
+            other = other.replace(microsecond=0)
+        return super().__eq__(other)
+
+    def __ge__(self, other):
+        if isinstance(other, datetime):
+            other = other.replace(microsecond=0)
+        return super().__eq__(other)
+
+    def __gt__(self, other):
+        if isinstance(other, datetime):
+            other = other.replace(microsecond=0)
+        return super().__eq__(other)
+
+    def __hash__(self):
+        return super().__hash__()
 
     def to_seconds(self):
         return (
@@ -153,6 +183,8 @@ class Time(datetime):
 
     @classmethod
     def from_weekday(cls, weekday: int, hour=0, minute=0, second=0, tzinfo: "Timezone"=None):
+        if not 0 <= weekday <= 6:
+            raise ValueError("weekday is not within 0 and 6 inclusive")
         
         now = cls.now(tzinfo)
         today = NAME_OF_DAYS.index(now.weekday)
@@ -172,9 +204,9 @@ class Time(datetime):
     def to_seconds_from_now(self):
         """returns the total seconds between now and self"""
         now = self.now(self.tzinfo)
-        if self > now:
+        if self >= now:
             return (self - now).total_seconds()
-        raise ValueError("self is lesser than now, expected self to be > now")
+        raise ValueError("self is lesser than now, expected self to be >= now")
 
     def replace(
         self,
@@ -185,7 +217,8 @@ class Time(datetime):
         hour: int = None,
         minute: int = None,
         second: int = None,
-        tzinfo: "Timezone" = None,
+        microsecond = 0,
+        tzinfo: "Timezone" = True,
     ):
         return type(self)(
             year or self.year,
@@ -194,7 +227,7 @@ class Time(datetime):
             hour or self.hour,
             minute or self.minute,
             second or self.second,
-            tzinfo=tzinfo or self.tzinfo,
+            tzinfo=self.tzinfo if tzinfo == True else tzinfo,
         )
 
 class _Time:
@@ -459,7 +492,7 @@ class _Time:
 class Timezone(tzinfo):
     def __init__(self, hour=0, minute=0) -> None:
         if not isinstance(hour, int):
-            raise TypeError(f"minute must be `int`, given {type(hour).__name__!r}")
+            raise TypeError(f"hour must be `int`, given {type(hour).__name__!r}")
         if not isinstance(minute, int):
             raise TypeError(f"minute must be `int`, given {type(minute).__name__!r}")
         if not -23 <= hour <= 23:
@@ -491,11 +524,11 @@ class Timezone(tzinfo):
         return Timezone.name_from_offset(self)
 
     @classmethod
-    def from_offset(cls, offset:str):
+    def from_string_offset(cls, offset:str):
         # add regex check
         if not offset:
             return cls()
-        return cls(int(offset))
+        return cls(*map(int, offset.split(":")))
 
     @staticmethod
     def name_from_offset(tz):
@@ -521,10 +554,8 @@ class Timezone(tzinfo):
             if t.tzinfo is not self:
                 # if the time has different timezone
                 raise ValueError("fromutc: dt.tzinfo is not self")
-
             return t + self.utcoffset()
-        raise TypeError("Not Time")
-
+        raise TypeError(f"fromutc(): expected Time, given {type(t).__class__.__name__!r}")
 
 class _Timezone(tzinfo):
     def __init__(self, hour=0, minute=0) -> None:
@@ -598,16 +629,26 @@ class _Timezone(tzinfo):
             )
         raise TypeError("")
 
-
 if __name__ == "__main__":
     import asyncio
-    tz = Timezone(7, 0)
+    from utils import Weekdays
 
-    # print(_ymd1_to_ymd2_in_days((4, 1, 1), (5, 1, 1)))
-    now = Time.now(tz=Timezone(7))
-    print(Time.utcnow())
+    # tz = Timezone(7, 0)
+    
+    print(Time.from_weekday(Weekdays(4)))
+
+
+    # # print(_ymd1_to_ymd2_in_days((4, 1, 1), (5, 1, 1)))
+    # now = Time.now(tz=tz)
+    # print(hash(now))
+    # print(isinstance(now, datetime))
+    # print(now == now)
+    # print(now.replace(tzinfo=None))
+    # print(Time.now(tz=tz).isoformat())
+    
     # print(Time.from_seconds(now.to_seconds(), tzinfo=tz) == now)
-    # print(Time.from_weekday(3))
+    # print(Time.f
+    # rom_weekday(3))
     # t = [(_, Time.from_seconds(now.to_seconds()+5, tzinfo=tz)) for _ in range(2000)]
     # for n, i in t:
     #     print(n, i.to_seconds_from_now())

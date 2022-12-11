@@ -1,7 +1,7 @@
 class Schema:
     """
     {
-        userid: 1234567890,
+        user: 1234567890,
 
         details: "sleep",
 
@@ -13,15 +13,15 @@ class Schema:
     }
     """
     def __init__(
-        self, userid: int = ..., details: str = ..., timezone: str = ..., time: str = ..., once: bool = False, posix_time: int = ...
+        self, user: int = ..., details: str = ..., timezone: str = ..., time: str = ..., once: bool = False, posix_time: int = ...
     ) -> None:
         if not isinstance(details, str):
             raise ValueError(
                 f"Schema(): ``name`` must be str, not {type(details).__name__!r}"
             )
-        if not isinstance(userid, int):
+        if not isinstance(user, int):
             raise ValueError(
-                f"Schema(): ``userid`` must be int, not {type(userid).__name__!r}"
+                f"Schema(): ``user`` must be int, not {type(user).__name__!r}"
             )
         if not isinstance(time, str):
             raise ValueError(
@@ -36,7 +36,7 @@ class Schema:
                 f"Schema(): ``posix_time`` must be int, not {type(posix_time).__name__!r}"
             )
 
-        self.userid = userid
+        self.user = user
         self.details = details
         self.timezone = timezone
         self.time = time

@@ -66,34 +66,48 @@ cancel sleep
 
 """
 
-import asyncio
+import pytz, datetime, asyncio, enum
+from motor.motor_asyncio import AsyncIOMotorClient
+from tm import Time, Timezone
+from os import getenv
+from dotenv import load_dotenv
+load_dotenv()
 
-loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
+class Tz(str, enum.Enum):
+    US_ALASKA = "-09:00"
+    LOS_ANGELES = "-08:00"
+    US_MEXICO = "-06:00"
+    US_NEW_YORK = "-05:00"
+    US_WASHINGTON_DC = "-03:00"
+    EU_LONDON = EU_REYKJAVIK = "+00:00"
+    EU_PARIS = "+01:00"
+    ASIA_DUBAI = "+04:00"
+    ASIA_INDIA = "+05:30"
+    ASIA_JAKARTA = "+07:00"
+    ASIA_BEIJING = ASIA_KUALA_LUMPUR = \
+    ASIA_SINGAPORE = ASIA_MANILA = "+08:00"
+    ASIA_SEOUL = ASIA_TOKYO = "+09:00"
+    AU_QUEENSLAND = "+10:00"
+    NEW_ZEALAND = "+12:00"
 
-async def main(t):
-    sleep = loop.create_future()
-    loop.call_later(t, sleep.set_result, 1)
-    await sleep
-    print("1")
-    return t
+client = AsyncIOMotorClient(getenv("DB_KEY"), serverSelectionTimeoutMS=5000)
+try:
+    DATABASE = client["project"]["project02"]
+except Exception as e:
+    print(f"{e}: Unable to connect to the server.")
+pacific = pytz.timezone('US/Pacific')
 
-f = asyncio.gather(main(5), main(20), main(-1))
-loop.run_until_complete(f)
-print(f)
+t = Time.now(tz=Timezone(*map(int, Tz.ASIA_JAKARTA.split(":"))))
+# t = datetime.datetime(2002, 10, 27, 6, 0, 0, tzinfo=datetime.timezone(datetime.timedelta(hours=7)))
+# t = tea(2002, 10, 27, 6, 0, 0)
 
+# aware_datetime = pacific.localize(t)
+# print(aware_datetime)
 
-"""
-Today, many have been preoccupied with the preparation of 
-welcoming christmas, be it the tree, decorations, food, etc.
-Despite all that, for most people, the best part about christmas 
-is the gifts. 
-Gifts are a concrete way of sharing joy and happiness, at least 
-the way I see it. But what makes them so appealing?
-We believe that the answer is the presentation of the gift itself;
-the wrapping. A nice looking gift gives off a good sense of 
-curiosity and expectation to many: 
-"What could be inside lies inside those fleshing, 
-sweet and colourful layers of paper?"
-Thus today, we are here to share and teach...
-"""
+async def main():
+    
+    await DATABASE.insert_one({"time":t})
+    print([i async for i in DATABASE.find({"time":t})])
+    print(await DATABASE.count_documents({}))
+
+asyncio.run(main())

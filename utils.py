@@ -6,11 +6,13 @@ import random, time, string
 
 def random_time():
     return time.time() + random.randint(120, 3600)
+
 def random_seconds(start, stop):
     return random.randrange(start, stop)
+
 def create_random_Schema():
     return Schema(
-        userid=random.randint(100000000, 9999999999), 
+        user=random.randint(100000000, 9999999999), 
         details=''.join([random.choice(list(string.ascii_letters)) for _ in range(random.randint(10, 48))]), 
         timezone="UTC"+random.choice("+-")+str(random.randint(0, 23)),
         time="urmom",
@@ -23,32 +25,21 @@ async def to_csv(data: dict, filename: str):
         raise ValueError(f"data has to be ``dict``, provided {type(data)}")
 
     async with aiofiles.open(filename, 'w') as file:
-        
         await file.write()
         ...
 
-def format_to_schedule():
-    """
-    {
-        Monday: [
-            {"12:00:00": "do a"},
-            {"14:00:00": "do a"},
-            {"18:00:00": "do a"},
-        ],
-        Wednesday: [
-            {"12:00:00": "do a"},
-            {"14:00:00": "do a"},
-            {"18:00:00": "do a"},
-        ],
-        Sunday: [
-            {"12:00:00": "do a"},
-            {"14:00:00": "do a"},
-            {"18:00:00": "do a"},
-        ]
-    }
-    """
+def check_timezone(tz:str):
+    sign = tz[0]
+    if not sign == "+" or sign == "-":
+        raise ValueError(f"Inappropriate timezone value given: {tz}")
+    offset = tz.split(":")
+    try:
+        h, m = (map(int, offset))
+    except:
+        raise ValueError(f"Inappropriate timezone value given: {tz}")
+    return h, m
 
-class Weekdays(Enum):
+class Weekdays(int, Enum):
     Mon = 0
     Tue = 1
     Wed = 2
@@ -56,6 +47,25 @@ class Weekdays(Enum):
     Fri = 4
     Sat = 5
     Sun = 6
+
+
+class TimezoneChoices(str, Enum):
+    US_ALASKA = "-09:00"
+    US_LOS_ANGELES = "-08:00"
+    US_MEXICO = "-06:00"
+    US_NEW_YORK = "-05:00"
+    US_WASHINGTON_DC = "-03:00"
+    EU_LONDON = EU_REYKJAVIK = "+00:00"
+    EU_PARIS = "+01:00"
+    ASIA_DUBAI = "+04:00"
+    ASIA_INDIA = "+05:30"
+    ASIA_JAKARTA = "+07:00"
+    ASIA_BEIJING = ASIA_KUALA_LUMPUR = \
+    ASIA_SINGAPORE = ASIA_MANILA = "+08:00"
+    ASIA_SEOUL = ASIA_TOKYO = "+09:00"
+    AU_QUEENSLAND = "+10:00"
+    NEW_ZEALAND = "+12:00"
+
 
 class MyModal(disnake.ui.Modal):
     def __init__(self, inter:disnake.AppCmdInter):
@@ -101,9 +111,7 @@ class MyModal(disnake.ui.Modal):
                 value=value[:1024],
                 inline=False,
             )
-        
         # result = await DATABASE.insert_many([
 
         # ])
-
         await inter.response.send_message(embed=embed)
