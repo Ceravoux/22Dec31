@@ -8,8 +8,8 @@ from loop import Loop
 from os import getenv
 from dotenv import load_dotenv
 from utils import Weekdays, TimezoneChoices, MyModal
-load_dotenv()
 
+load_dotenv()
 
 client = AsyncIOMotorClient(getenv("DB_KEY"), serverSelectionTimeoutMS=5000)
 try:
@@ -18,21 +18,29 @@ except Exception as e:
     print(f"{e}: Unable to connect to the server.")
 
 
-class MyClient(commands.InteractionBot):
+class MyCogs(commands.Cog):
+    def __init__(self, *, bot) -> None:
+        super().__init__()
+        self.bot = bot
+        self.worker = Loop(loop=self.bot.loop, bot=self.bot)
+
+    @commands.Cog.listener()
     async def on_ready(self):
-        
-        self.handle = Loop(loop=self.loop, bot=self)
-        print(self.loop)
-        print(await self.get_or_fetch_user(756056148058177596))
+        await DATABASE.drop()
+        print(self.bot.loop)
+        print(await self.bot.get_or_fetch_user(756056148058177596))
+    
+    @commands.Cog.listener()
+    async def on_disconnect(self):
+        if self.worker.is_running:
+            self.worker.suspend()
 
-    async def on_message(self, message: disnake.Message):
-        if message.author == self.user:
-            return
-        # print(message.author)
+    @commands.Cog.listener()
+    async def on_resumed(self):
+        if self.worker.is_suspended:
+            self.worker.continue_loop()
 
-        # await message.author.send("thonk")
-
-    @commands.slash_command(guild_ids=[963069529968242789])
+    @commands.slash_command(guild_ids=[1048908479202594878])
     async def create_schedule(
         self,
         inter: disnake.AppCmdInter,
@@ -42,7 +50,7 @@ class MyClient(commands.InteractionBot):
         details: commands.String[1, 48],
     ):
         """
-        creates a weekly task.
+        Creates a weekly task.
 
         Parameters
         ----------
@@ -51,7 +59,6 @@ class MyClient(commands.InteractionBot):
         time: e.g. 08:42:15
         details: e.g. Feed dog homework
         """
-        h, m, s = [int(i) for i in time.split(":")]
         t = Time.from_weekday(
             weekday,
             *[int(i) for i in time.split(":")],
@@ -60,21 +67,24 @@ class MyClient(commands.InteractionBot):
         data = Schema(
             user=inter.author.id,
             details=details,
-            timezone=t.tzinfo,
+            timezone=timezone,
             time=t,
             once=t.once,
             posix_time=t.to_seconds(),
         )
         await asyncio.gather(
-            DATABASE.insert_one(str(data)),
+            DATABASE.insert_one(data.to_db()),
             inter.response.send_message("Successfully scheduled!", ephemeral=True),
         )
-        if self.handle.is_running:
-            self.handle.check(data.posix_time)
-        else:
-            self.handle.run()
+        if self.worker.is_running:
+            self.worker.check(data.posix_time)
+            print("hmm")
 
-    @commands.slash_command(guild_ids=[963069529968242789])
+        else:
+            self.worker.run()
+            print("hm")
+
+    @commands.slash_command(guild_ids=[1048908479202594878])
     async def create_task(
         self,
         inter: disnake.AppCmdInter,
@@ -84,7 +94,7 @@ class MyClient(commands.InteractionBot):
         details: commands.String[1, 48],
     ):
         """
-        creates a one-time task.
+        Creates a one-time task.
 
         Parameters
         ----------
@@ -94,59 +104,80 @@ class MyClient(commands.InteractionBot):
         details: e.g. Feed dog homework
         """
 
-        print(weekday)
+        print(DATABASE)
         t = Time.from_weekday(
             weekday,
             *[int(i) for i in time.split(":")],
             tzinfo=Timezone.from_string_offset(timezone),
         )
+        print(t)
         t.run_once()
         data = Schema(
             user=inter.author.id,
             details=details,
-            timezone=t.tzinfo,
+            timezone=timezone,
             time=t,
             once=t.once,
             posix_time=t.to_seconds(),
         )
         await asyncio.gather(
-            DATABASE.insert_one(str(data)),
+            DATABASE.insert_one(data.to_db()),
             inter.response.send_message("Successfully scheduled!", ephemeral=True),
         )
-        if self.handle.is_running:
-            self.handle.check(data.posix_time)
-        else:
-            self.handle.run()
+        if self.worker.is_running:
+            self.worker.check(data.posix_time)
+            print("hmmm")
 
-    @commands.slash_command(guild_ids=[963069529968242789])
+        else:
+            tas = self.worker.run()
+            print(asyncio.all_tasks(loop=self.worker.loop))
+            print("hmmm5")
+
+
+    @commands.slash_command(guild_ids=[1048908479202594878])
     async def create_schedule_modal(self, inter: disnake.AppCmdInter):
         await inter.response.send_modal(modal=MyModal(inter))
 
-    # @commands.slash_command(guild_ids=[963069529968242789])
+    # @commands.slash_command(guild_ids=[1048908479202594878])
     # async def create_task_modal(self, inter: disnake.AppCmdInter):
     #     await inter.response.send_modal(modal=MyModal(inter))
 
-    @commands.slash_command(guild_ids=[963069529968242789])
+    @commands.slash_command(guild_ids=[1048908479202594878])
     async def edit(self, inter: disnake.AppCmdInter, time, details):
+        """
+        Edits the details of a task/schedule.
+
+        Parameters
+        ----------
+        time: the time of the task/schedule to be edited
+        details: new description
+        """
         if inter.author == self.user:
-            self.handle.sleeping.cancel()
+            self.worker.sleeping.cancel()
 
         result = await DATABASE.update_one(
             {"user": inter.author.id, "time": time},
-            {"$set": {"time": time, "details": details}},
+            {"$set": {"details": details}},
         )
 
         if result.modified_count == 0:
             await inter.response.send_message("No result.", ephemeral=True)
         else:
             await inter.response.send_message(
-                f"Successfully edited to: {time} - {details}!", ephemeral=True
+                f"Successfully edited!", ephemeral=True
             )
 
-    @commands.slash_command(guild_ids=[9630695299968242789])
+    @commands.slash_command(guild_ids=[1048908479202594878])
     async def cancel(self, inter: disnake.AppCmdInter, time):
+        """
+        Cancels a task/schedule.
+
+        Parameter
+        ---------
+        time: the time of the task/schedule to be cancelled
+        """
         if inter.author == self.user:
-            self.handle.sleeping.cancel()
+            self.worker.sleeping.cancel()
 
         result = await DATABASE.delete_one({"user": inter.author.id, "time": time})
 
@@ -155,11 +186,14 @@ class MyClient(commands.InteractionBot):
         else:
             await inter.response.send_message("Task deleted!", ephemeral=True)
 
-    @commands.slash_command(guild_ids=[963069529968242789])
+    @commands.slash_command(guild_ids=[1048908479202594878])
     async def task_list(self, inter: disnake.AppCmdInter):
+        """
+        Displays your list of schedules and tasks.
+        """
 
         emb = disnake.Embed(
-            title=f"{inter.author.id}'s tasks", colour=3046752
+            title=f"{inter.author.name}'s tasks", colour=3046752
         ).set_author(
             name=inter.author.display_name, icon_url=inter.author.display_avatar
         )
@@ -167,7 +201,7 @@ class MyClient(commands.InteractionBot):
         schedule = {}
         tasks = ""
         async for i in DATABASE.find({"user": inter.author.id}).sort("posix_time", 1):
-            tz = Timezone.from_string_offset(i["Timezone"])
+            tz = Timezone.from_string_offset(i["timezone"])
             i["time"] = Time.from_seconds(i["posix_time"], tzinfo=tz)
             if i["once"]:
                 tasks += f'{i["time"]} - {i["details"]}\n'
@@ -187,11 +221,12 @@ class MyClient(commands.InteractionBot):
                 string += d + "\n"
             string += "\n"
 
-        emb.add_field(name="Schedule", value=string, inline=False)
-        emb.add_field(name="Unfinished Tasks", value=tasks, inline=False)
+        emb.add_field(name="Schedule", value=string or "\u200b", inline=False)
+        emb.add_field(name="Unfinished Tasks", value=tasks or "\u200b", inline=False)
 
         await inter.response.send_message(embed=emb, ephemeral=True)
 
 
-bot = MyClient()
+bot = commands.InteractionBot()
+bot.add_cog(MyCogs(bot=bot))
 bot.run(getenv("TOKEN"))

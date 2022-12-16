@@ -20,7 +20,7 @@ def create_random_Schema():
         posix_time=time.time() + random.randint(3600, 86400*2)
     )
 
-async def to_csv(data: dict, filename: str):
+async def to_table(data: dict, filename: str):
     if not isinstance(data, dict):
         raise ValueError(f"data has to be ``dict``, provided {type(data)}")
 
@@ -39,6 +39,7 @@ def check_timezone(tz:str):
         raise ValueError(f"Inappropriate timezone value given: {tz}")
     return h, m
 
+
 class Weekdays(int, Enum):
     Mon = 0
     Tue = 1
@@ -50,21 +51,21 @@ class Weekdays(int, Enum):
 
 
 class TimezoneChoices(str, Enum):
-    US_ALASKA = "-09:00"
-    US_LOS_ANGELES = "-08:00"
-    US_MEXICO = "-06:00"
-    US_NEW_YORK = "-05:00"
-    US_WASHINGTON_DC = "-03:00"
-    EU_LONDON = EU_REYKJAVIK = "+00:00"
-    EU_PARIS = "+01:00"
-    ASIA_DUBAI = "+04:00"
-    ASIA_INDIA = "+05:30"
-    ASIA_JAKARTA = "+07:00"
+    US_ALASKA = "UTC-09:00"
+    US_LOS_ANGELES = "UTC-08:00"
+    US_MEXICO = "UTC-06:00"
+    US_NEW_YORK = "UTC-05:00"
+    US_WASHINGTON_DC = "UTC-03:00"
+    EU_LONDON = EU_REYKJAVIK = "UTC+00:00"
+    EU_PARIS = "UTC+01:00"
+    ASIA_DUBAI = "UTC+04:00"
+    ASIA_INDIA = "UTC+05:30"
+    ASIA_JAKARTA = "UTC+07:00"
     ASIA_BEIJING = ASIA_KUALA_LUMPUR = \
-    ASIA_SINGAPORE = ASIA_MANILA = "+08:00"
-    ASIA_SEOUL = ASIA_TOKYO = "+09:00"
-    AU_QUEENSLAND = "+10:00"
-    NEW_ZEALAND = "+12:00"
+    ASIA_SINGAPORE = ASIA_MANILA = "UTC+08:00"
+    ASIA_SEOUL = ASIA_TOKYO = "UTC+09:00"
+    AU_QUEENSLAND = "UTC+10:00"
+    NEW_ZEALAND = "UTC+12:00"
 
 
 class MyModal(disnake.ui.Modal):
