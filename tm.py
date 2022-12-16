@@ -91,8 +91,7 @@ class Time(datetime):
             hour=hour, 
             minute=minute,
             second=second,
-            tzinfo=tzinfo,
-                # or Timezone(),
+            tzinfo=tzinfo or Timezone(),
             microsecond=0
         )
 
@@ -111,6 +110,7 @@ class Time(datetime):
     def run_once(self):
         self._once = True
 
+
     def __str__(self):
         return f"{self.weekday}, {self.day:02d}/{self.month:02d}/{self.year} {self.hour:02d}:{self.minute:02d}:{self.second:02d} {self.tzinfo}"
 
@@ -122,26 +122,26 @@ class Time(datetime):
             other = other.replace(microsecond=0)
         return super().__eq__(other)
 
-
     def __le__(self, other):
         if isinstance(other, datetime):
             other = other.replace(microsecond=0)
-        return super().__eq__(other)
+        return super().__le__(other)
 
     def __lt__(self, other):
         if isinstance(other, datetime):
             other = other.replace(microsecond=0)
-        return super().__eq__(other)
+        return super().__lt__(other)
 
     def __ge__(self, other):
         if isinstance(other, datetime):
             other = other.replace(microsecond=0)
-        return super().__eq__(other)
+        print(repr(self), repr(other))
+        return super().__ge__(other)
 
     def __gt__(self, other):
         if isinstance(other, datetime):
             other = other.replace(microsecond=0)
-        return super().__eq__(other)
+        return super().__gt__(other)
 
     def __hash__(self):
         return super().__hash__()
@@ -188,13 +188,12 @@ class Time(datetime):
         
         now = cls.now(tzinfo)
         today = NAME_OF_DAYS.index(now.weekday)
-        print((weekday - today + (7 if weekday < today else 0)) * SECONDS_IN_1D)
         return cls.from_seconds(
             now.to_seconds() 
             + (weekday - today + (7 if weekday < today else 0)) * SECONDS_IN_1D
-            + hour * 3600
-            + minute * 60
-            + second,
+            + (hour - now.hour) * 3600
+            + (minute - now.minute) * 60
+            + second - now.second,
             tzinfo=tzinfo
         )
 
@@ -204,9 +203,10 @@ class Time(datetime):
     def to_seconds_from_now(self):
         """returns the total seconds between now and self"""
         now = self.now(self.tzinfo)
+        print(self >= now)
         if self >= now:
             return (self - now).total_seconds()
-        raise ValueError("self is lesser than now, expected self to be >= now")
+        raise ValueError(f"self is lesser than now, expected {self} to be >= {now}")
 
     def replace(
         self,
@@ -525,10 +525,17 @@ class Timezone(tzinfo):
 
     @classmethod
     def from_string_offset(cls, offset:str):
-        # add regex check
+        """
+        Creates a `Timezone` instance from UTC offset.
+        e.g. 'UTC+09:00'
+        """
+        # HACK: add regex check
         if not offset:
             return cls()
-        return cls(*map(int, offset.split(":")))
+        if offset[:3] != "UTC":
+            raise ValueError("from_string_offset(): offset not in UTC")
+
+        return cls(*map(int, offset[3:].split(":")))
 
     @staticmethod
     def name_from_offset(tz):
@@ -634,8 +641,11 @@ if __name__ == "__main__":
     from utils import Weekdays
 
     # tz = Timezone(7, 0)
-    
-    print(Time.from_weekday(Weekdays(4)))
+    t = Time.now()
+    print(t)
+    t = t + timedelta(minutes=10)
+    print(t)
+    print(t >= Time.now())
 
 
     # # print(_ymd1_to_ymd2_in_days((4, 1, 1), (5, 1, 1)))

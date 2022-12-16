@@ -1,3 +1,4 @@
+from tm import Time, Timezone
 class Schema:
     """
     {
@@ -13,7 +14,7 @@ class Schema:
     }
     """
     def __init__(
-        self, user: int = ..., details: str = ..., timezone: str = ..., time: str = ..., once: bool = False, posix_time: int = ...
+        self, user: int = ..., details: str = ..., timezone: str = ..., weekday: str = ..., time: str = ..., once: bool = False, posix_time: int = ...
     ) -> None:
         if not isinstance(details, str):
             raise ValueError(
@@ -21,11 +22,15 @@ class Schema:
             )
         if not isinstance(user, int):
             raise ValueError(
-                f"Schema(): ``user`` must be int, not {type(user).__name__!r}"
+                f"Schema(): ``userid`` must be int, not {type(user).__name__!r}"
             )
-        if not isinstance(time, str):
+        if not isinstance(timezone, str):
             raise ValueError(
-                f"Schema(): ``schedule`` must be str, not {type(time).__name__!r}"
+                f"Schema(): ``timezone`` must be str, not {type(timezone).__name__!r}"
+            )
+        if not isinstance(time, Time):
+            raise ValueError(
+                f"Schema(): ``time`` must be str, not {type(time).__name__!r}"
             )
         if not isinstance(once, bool):
             raise ValueError(
@@ -36,6 +41,11 @@ class Schema:
                 f"Schema(): ``posix_time`` must be int, not {type(posix_time).__name__!r}"
             )
 
+        # self.time = Time.from_weekday(
+        #     weekday,
+        #     *[int(i) for i in time.split(":")],
+        #     tzinfo=Timezone.from_string_offset(timezone),
+        # )
         self.user = user
         self.details = details
         self.timezone = timezone
@@ -43,14 +53,6 @@ class Schema:
         self.once = once
         self.posix_time = posix_time
 
-    def __str__(self):
-        return str(self.__dict__)
-
-    @classmethod
-    def from_str(cls, s:str):
-        s = s.split()
-
-        return cls()
-
-
-
+    def to_db(self):
+        print(self.__dict__)
+        return self.__dict__
