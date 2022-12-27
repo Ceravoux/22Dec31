@@ -1,53 +1,33 @@
-import aiofiles
 from enum import Enum
 import disnake
-from test import Schema
+from Schema import Schema, ObjectId
 import random, time, string
+from tm import Time, Timezone
+from database import DATABASE
+
 
 def random_time():
-    return time.time() + random.randint(120, 3600)
+    return int(time.time() + random.randint(120, 3600))
+
 
 def random_seconds(start, stop):
     return random.randrange(start, stop)
 
-def create_random_Schema():
+
+def create_random_Schema(once=True):
+    t = random_time()
     return Schema(
-        user=random.randint(100000000, 9999999999), 
-        details=''.join([random.choice(list(string.ascii_letters)) for _ in range(random.randint(10, 48))]), 
-        timezone="UTC"+random.choice("+-")+str(random.randint(0, 23)),
-        time="urmom",
-        once=True,
-        posix_time=time.time() + random.randint(3600, 86400*2)
+        user=random.randint(100000000000000000, 999999999999999999),
+        details="".join(
+            [
+                random.choice(list(string.ascii_letters))
+                for _ in range(random.randint(10, 48))
+            ]
+        ),
+        timezone="UTC" + random.choice("+-") + str(random.randint(0, 23)),
+        time=Time.from_seconds(t),
+        once=once,
     )
-
-async def to_table(data: dict, filename: str):
-    if not isinstance(data, dict):
-        raise ValueError(f"data has to be ``dict``, provided {type(data)}")
-
-    async with aiofiles.open(filename, 'w') as file:
-        await file.write()
-        ...
-
-def check_timezone(tz:str):
-    sign = tz[0]
-    if not sign == "+" or sign == "-":
-        raise ValueError(f"Inappropriate timezone value given: {tz}")
-    offset = tz.split(":")
-    try:
-        h, m = (map(int, offset))
-    except:
-        raise ValueError(f"Inappropriate timezone value given: {tz}")
-    return h, m
-
-
-class Weekdays(int, Enum):
-    Mon = 0
-    Tue = 1
-    Wed = 2
-    Thu = 3
-    Fri = 4
-    Sat = 5
-    Sun = 6
 
 
 class TimezoneChoices(str, Enum):
@@ -61,58 +41,164 @@ class TimezoneChoices(str, Enum):
     ASIA_DUBAI = "UTC+04:00"
     ASIA_INDIA = "UTC+05:30"
     ASIA_JAKARTA = "UTC+07:00"
-    ASIA_BEIJING = ASIA_KUALA_LUMPUR = \
-    ASIA_SINGAPORE = ASIA_MANILA = "UTC+08:00"
+    ASIA_BEIJING = ASIA_KUALA_LUMPUR = ASIA_SINGAPORE = ASIA_MANILA = "UTC+08:00"
     ASIA_SEOUL = ASIA_TOKYO = "UTC+09:00"
     AU_QUEENSLAND = "UTC+10:00"
     NEW_ZEALAND = "UTC+12:00"
 
 
-class MyModal(disnake.ui.Modal):
-    def __init__(self, inter:disnake.AppCmdInter):
-        # The details of the modal, and its components
-        components = [
-            disnake.ui.TextInput(
-                label="Timezone in UTC, defaults to UTC+00",
-                placeholder=f"e.g. UTC+04 or UTC-02",
-                custom_id="tzinfo",
-                style=disnake.TextInputStyle.short,
-                min_length=6,
-                max_length=6,
-            ),
-            disnake.ui.TextInput(
-                label="Schedule details",
-                value="**Mon**\nSleep\n\n**Tue**\nSleep\n\n"
-                      "**Wed**\nSleep\n\n**Thu**\nSleep\n\n"
-                      "**Fri**\nSleep\n\n**Sat**\nSleep\n\n"
-                      "**Sun**\nSleep""",
-                custom_id="details",
-                style=disnake.TextInputStyle.paragraph,
-                min_length=1,
-            ) 
-        ]
+class View(disnake.ui.View):
+    def __init__(
+        self, 
+        schedule: list[tuple[ObjectId, str]] = None, 
+        task: list[tuple[ObjectId, str]] = None
+    ):
+        self.sched = schedule
+        self.task = task
+        super().__init__(timeout=90)
+
+    @disnake.ui.string_select(
+        placeholder="Available actions.",
+        options=[
+            disnake.SelectOption(label="Create New Task", value="create"),
+            disnake.SelectOption(label="Edit Task", value="edittask"),
+            disnake.SelectOption(label="Cancel Task", value="deletetask"),
+            disnake.SelectOption(label="Edit Schedule", value="editschedule"),
+            disnake.SelectOption(label="Cancel Schedule", value="deleteschedule"),
+        ],
+    )
+    async def callback(
+        self, option: disnake.ui.StringSelect, inter: disnake.AppCmdInter
+    ):
+        match option.values[0]:
+            case "create":
+                await inter.response.send_modal(CreateModal())
+            case "edittask" | "deletetask":
+                if not self.task:
+                    return
+                await inter.response.defer(with_message=False)
+                return await inter.edit_original_response(
+                    view=self.add_item(
+                        Select(option.values[0][:-4], self.task)
+                    )
+                )
+            case "editschedule" | "deleteschedule":
+                if not self.sched:
+                    return
+                await inter.response.defer(with_message=False)
+                return await inter.edit_original_response(
+                    view=self.add_item(
+                        Select(option.values[0][:-8], self.sched)
+                    )
+                )
+
+
+class Select(disnake.ui.StringSelect):
+    def __init__(self, type: str, lists: list[tuple[ObjectId, str]]):
 
         super().__init__(
-            title="Create Schedule",
-            custom_id="create",
-            components=components,
+            options=[
+                disnake.SelectOption(label=i[1], value=str(i[0])) 
+                for i in lists
+            ]
+            or ["None"],
+            custom_id=type,
+            max_values=1 if type == "edit" else len(lists),
+            placeholder=f"Select to {type}.",
         )
 
-    # The callback received when the user input is completed.
+    async def callback(self, interaction: disnake.AppCmdInter):
+        match self.custom_id:
+            case "edit":
+                return await interaction.response.send_modal(
+                    EditModal(self.values[0])
+                )
+            case "delete":
+                res = await DATABASE.delete_many(
+                    {"_id": {"$in": [ObjectId(i) for i in self.values]}}
+                )
+                return await interaction.response.send_message(
+                    f"Successfully cancelled {res.deleted_count} tasks.",
+                    ephemeral=True
+                )
+
+
+class EditModal(disnake.ui.Modal):
+    def __init__(self, _id):
+        super().__init__(
+            title="Edit",
+            custom_id=_id,
+            components=[
+                disnake.ui.TextInput(
+                    label="Detail",
+                    custom_id="Detail",
+                    style=disnake.TextInputStyle.paragraph,
+                    min_length=1,
+                    max_length=48,
+                )
+            ],
+        )
+
+    async def edit(self, inter: disnake.ModalInteraction):
+
+        await DATABASE.update_one(
+            {"_id": ObjectId(self.custom_id)}, 
+            {"$set": {"details": inter.text_values["Detail"]}}
+        )
+        await inter.response.send_message("Successfully edited.")
+
+
+class CreateModal(disnake.ui.Modal):
+    def __init__(self):
+        super().__init__(
+            title="Create",
+            components=[
+                disnake.ui.TextInput(
+                    label="Timezone in UTC, e.g. UTC+5:30",
+                    custom_id="Timezone",
+                    value="UTC+00:00",
+                    style=disnake.TextInputStyle.short,
+                    min_length=9,
+                    max_length=9,
+                ),
+                disnake.ui.TextInput(
+                    label="Date (YYYY/MM/DD or MM/DD) or \"today\"",
+                    custom_id="Date",
+                    style=disnake.TextInputStyle.short,
+                    min_length=3,
+                    max_length=10,
+                ),
+                disnake.ui.TextInput(
+                    label="Time (H:M:S or H:M)",
+                    custom_id="Time",
+                    style=disnake.TextInputStyle.short,
+                    min_length=5,
+                    max_length=8,
+                ),
+                disnake.ui.TextInput(
+                    label="Details",
+                    custom_id="Details",
+                    style=disnake.TextInputStyle.paragraph,
+                    min_length=1,
+                    max_length=48,
+                ),
+            ],
+        )
+
     async def callback(self, inter: disnake.ModalInteraction):
-        embed = disnake.Embed(title="Schedule")
-
-        data = inter.text_values
-        data = data["details"].split()
-        print(data)
-
-        for key, value in data.items():
-            embed.add_field(
-                name=key.capitalize(),
-                value=value[:1024],
-                inline=False,
+        try:
+            data = Schema(
+                user=inter.author.id,
+                timezone=inter.text_values["Timezone"],
+                date=inter.text_values["Date"],
+                time=inter.text_values["Time"],
+                details=inter.text_values["Details"],
+                once=True,
             )
-        # result = await DATABASE.insert_many([
-
-        # ])
-        await inter.response.send_message(embed=embed)
+        except Exception as e:
+            return await inter.response.send_message(
+                e, ephemeral=True)
+        else:
+            await DATABASE.insert_one(data.to_db())
+            return await inter.response.send_message(
+                "Successfully created.", ephemeral=True)

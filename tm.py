@@ -1,17 +1,25 @@
-"""For computing time (kinda). Does not support DST. 
-Datetime module exists, yet I made this. Ultra clownery."""
+"""It has been done."""
 
 __all__ = ("Time", "Timezone")
 
 from datetime import tzinfo, datetime, timedelta
 from time import gmtime, time
+from enum import Enum
 
 SECONDS_IN_1D = 24 * 3600
 SECONDS_IN_1W = SECONDS_IN_1D * 7
 
-TIME_LIMIT = SECONDS_IN_1D * 183
+TIME_LIMIT = 183
 
-NAME_OF_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+class Weekdays(int, Enum):
+    Mon = 0
+    Tue = 1
+    Wed = 2
+    Thu = 3
+    Fri = 4
+    Sat = 5
+    Sun = 6
+
 DAYS_IN_MONTHS = [
     0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
 ]
@@ -22,25 +30,78 @@ def _isleap(year):
 def _ymd1_to_ymd2_in_days(ymd1, ymd2, *, within_time_limit=False) -> int:
     func = lambda y: y * 365 + y // 4 - y // 100 + y // 400
     days = func(ymd2[0]) - func(ymd1[0])
-    # print(days)
     if ymd2[1] < ymd1[1]:
         days -= sum(DAYS_IN_MONTHS[ymd2[1] : ymd1[1]])
-        # print(DAYS_IN_MONTHS[ymd2[1]:ymd1[1]], sum(DAYS_IN_MONTHS[ymd2[1]:ymd1[1]]))
     else:
         days += sum(DAYS_IN_MONTHS[ymd1[1] : ymd2[1]])
-        # print(DAYS_IN_MONTHS[ymd1[1] : ymd2[1]])
 
     if (_isleap(ymd1[0]) and ymd1[1] < 2 and ymd2[1] > 2) or (
         _isleap(ymd2[0]) and ymd2[1] > 2
     ):
-        print("honk")
         days += 1
     days -= ymd1[2]
     days += ymd2[2]
-    if within_time_limit and days > 182:
-        raise ValueError("exceeded 183 days")
+
+    if within_time_limit and days > TIME_LIMIT:
+        raise ValueError(f"Exceeded time limit (183 days) {ymd2}")
 
     return days
+
+def check_time(t: str) -> tuple[int]:
+    t = t.split(":")
+    try:
+        hms = tuple(map(int, t))
+        l = len(hms)
+        if l > 3 or l < 1:
+            raise ValueError("time must be in hour:minute:second or hour:minute")
+        if l > 0 and not 0 <= hms[0] <= 23:
+            raise ValueError("Hour must be 0-23")
+        if l > 1 and not 0 <= hms[1] <= 59:
+            raise ValueError("Minute must be 0-59")
+        if l > 2 and not 0 <= hms[2] <= 59:
+            raise ValueError("Second must be 0-59")
+
+    except Exception as e:
+        raise ValueError(f"Inappropriate time given: {t}. {e.args}")
+    return hms
+
+def check_date(d: str, today: tuple[int]) -> tuple[int]:
+    if d.strip().lower() == "today":
+        return today
+
+    d = d.split("/")
+    try:
+        ymd = tuple(map(int, d))
+        l = len(ymd)
+        if l > 3 or l < 2:
+            raise ValueError("Date must be in year/month/day or month/day")
+
+        if l == 2:
+            ymd = (today[0],) + ymd
+
+        # if not 1 <= ymd[0] < 9999:
+        #     raise ValueError("Year")
+
+        # if not 1 <= ymd[1] <= 12:
+        #     raise ValueError(f"Month must be in 1-12, not {ymd[1]}")
+
+        # if (_isleap(ymd[0]) and ymd[1] == 2 and not 1 <= ymd[2] <= 29) or (
+        #     not 1 <= ymd[2] <= DAYS_IN_MONTHS[ymd[1]]
+        # ):
+        #     ValueError(f"Day exceeds days in month")
+
+    except Exception as e:
+        raise ValueError(f"Inappropriate date given: {d}. {e.args}")
+
+def check_timezone(tz: str) -> str:
+    if tz[:3] != "UTC":
+        raise ValueError(f"Timezone must be in UTC, not {tz[:3]}")
+    sign = tz[3]
+    if not sign == "+" or sign == "-":
+        raise ValueError(f"Inappropriate timezone offset given: {tz}")
+    check_time(tz[4:])
+    return tz
+
 
 class Time(datetime):
     """
@@ -104,15 +165,14 @@ class Time(datetime):
         return self._once
 
     @property
-    def weekday(self):
-        return NAME_OF_DAYS[super().weekday()]
+    def weekday(self) -> str:
+        return Weekdays(super().weekday()).name
 
     def run_once(self):
         self._once = True
 
-
     def __str__(self):
-        return f"{self.weekday}, {self.day:02d}/{self.month:02d}/{self.year} {self.hour:02d}:{self.minute:02d}:{self.second:02d} {self.tzinfo}"
+        return f"{self.weekday}, {self.year:04d}/{self.month:02d}/{self.day:02d} {self.hour:02d}:{self.minute:02d}:{self.second:02d} {self.tzinfo}"
 
     def __repr__(self):
         return f"{type(self).__name__}({self.year}, {self.month}, {self.day}, {self.hour}, {self.minute}, {self.second}, {self.tzinfo}, once={self.once})"
@@ -135,7 +195,6 @@ class Time(datetime):
     def __ge__(self, other):
         if isinstance(other, datetime):
             other = other.replace(microsecond=0)
-        print(repr(self), repr(other))
         return super().__ge__(other)
 
     def __gt__(self, other):
@@ -147,6 +206,7 @@ class Time(datetime):
         return super().__hash__()
 
     def to_seconds(self):
+        """returns seconds since unix epoch"""
         return (
             _ymd1_to_ymd2_in_days(
                 (1970, 1, 1), (self.year, self.month, self.day), within_time_limit=False
@@ -182,15 +242,15 @@ class Time(datetime):
         return cls(year, month, day, hour, minute, second, tzinfo=tzinfo)
 
     @classmethod
-    def from_weekday(cls, weekday: int, hour=0, minute=0, second=0, tzinfo: "Timezone"=None):
+    def from_weekday(cls, weekday: int, hour=0, minute=0, second=0, *, tzinfo: "Timezone"=None):
         if not 0 <= weekday <= 6:
             raise ValueError("weekday is not within 0 and 6 inclusive")
         
         now = cls.now(tzinfo)
-        today = NAME_OF_DAYS.index(now.weekday)
+        today = Weekdays[now.weekday].value
         return cls.from_seconds(
             now.to_seconds() 
-            + (weekday - today + (7 if weekday < today else 0)) * SECONDS_IN_1D
+            + (weekday - today + (7 if weekday < today or (weekday == today and hour < now.hour) else 0)) * SECONDS_IN_1D
             + (hour - now.hour) * 3600
             + (minute - now.minute) * 60
             + second - now.second,
@@ -203,7 +263,6 @@ class Time(datetime):
     def to_seconds_from_now(self):
         """returns the total seconds between now and self"""
         now = self.now(self.tzinfo)
-        print(self >= now)
         if self >= now:
             return (self - now).total_seconds()
         raise ValueError(f"self is lesser than now, expected {self} to be >= {now}")
@@ -293,9 +352,8 @@ class _Time:
         self._hour = hour
         self._minute = minute
         self._second = second
-        self._tzinfo = tzinfo or Timezone(0, 0)
+        self._tzinfo = tzinfo or Timezone()
         self._once = False
-        # print(repr(self))
         return self
 
     @property
@@ -334,36 +392,33 @@ class _Time:
 
     @property
     def weekday(self):
-        return NAME_OF_DAYS[
+        return Weekdays(
             _ymd1_to_ymd2_in_days(
                 (1, 1, 1), (self.year, self.month, self.day), within_time_limit=False
             ) % 7
-        ]
+        ).name
 
     def run_once(self):
         self._once = True
 
     def __str__(self):
-        return f"{self.weekday}, {self.day:02d}/{self.month:02d}/{self.year} {self.hour:02d}:{self.minute:02d}:{self.second:02d} {self.tzinfo}"
+        return f"{self.weekday}, {self.year:04d}/{self.month:02d}/{self.day:02d} {self.hour:02d}:{self.minute:02d}:{self.second:02d} {self.tzinfo}"
 
     def __repr__(self):
         return f"{type(self).__name__}({self.year}, {self.month}, {self.day}, {self.hour}, {self.minute}, {self.second}, {self.tzinfo}, once={self.once})"
 
     def __eq__(self, other):
-        print(self, "==", other)
         if isinstance(other, Time):
             if self.tzinfo == other.tzinfo:
                 return all(
                     getattr(self, n) == getattr(other, n) for n in self.__slots__[:-2]
                 ) 
             raise ValueError(f"Different tzinfo; expected {self.tzinfo} given {other.tzinfo}")
-        # print(other)
         raise TypeError(
             f"expected type `Time`, given {type(other).__class__.__name__!r}"
         )
 
     def __ge__(self, other):
-        print(self, ">=", other)
         if isinstance(other, Time):
             if self.tzinfo == other.tzinfo:
                 return any(
@@ -375,7 +430,6 @@ class _Time:
         )
 
     def __le__(self, other):
-        print(self, "<=", other)
         if isinstance(other, Time):
             if self.tzinfo == other.tzinfo:
                 return any(
@@ -387,7 +441,6 @@ class _Time:
         )
 
     def __gt__(self, other):
-        print(self, ">", other)
         if isinstance(other, Time):
             if self.tzinfo == other.tzinfo:
                 return any(getattr(self, n) > getattr(other, n) for n in self.__slots__[:-2])
@@ -398,7 +451,6 @@ class _Time:
         )
 
     def __lt__(self, other):
-        print(self, "<", other)
         if isinstance(other, Time):
             if self.tzinfo == other.tzinfo:
                 return any(getattr(self, n) < getattr(other, n) for n in self.__slots__[:-2])
@@ -439,11 +491,11 @@ class _Time:
         return cls(year, month, day, hour, minute, second, tzinfo=tzinfo)
 
     @classmethod
-    def from_weekday(cls, weekday: int, hour=0, minute=0, second=0, tzinfo: "Timezone"=None):
+    def from_weekday(cls, weekday: int, hour=0, minute=0, second=0, *, tzinfo: "Timezone"=None):
         
         now = cls.now(tzinfo)
-        today = NAME_OF_DAYS.index(now.weekday)
-        print((weekday - today + (7 if weekday < today else 0)) * SECONDS_IN_1D)
+        today = Weekdays[now.weekday].value
+
         return cls.from_seconds(
             now.to_seconds() 
             + (weekday - today + (7 if weekday < today else 0)) * SECONDS_IN_1D
@@ -529,9 +581,10 @@ class Timezone(tzinfo):
         Creates a `Timezone` instance from UTC offset.
         e.g. 'UTC+09:00'
         """
-        # HACK: add regex check
+
         if not offset:
             return cls()
+
         if offset[:3] != "UTC":
             raise ValueError("from_string_offset(): offset not in UTC")
 
@@ -600,7 +653,7 @@ class _Timezone(tzinfo):
 
     @classmethod
     def from_offset(cls, offset:str):
-        # add regex check
+
         return cls(int(offset))
 
     @staticmethod
@@ -634,47 +687,4 @@ class _Timezone(tzinfo):
             return type(t).from_seconds(
                 t.to_seconds() + self.utcoffset(in_seconds=True), tzinfo=self
             )
-        raise TypeError("")
-
-if __name__ == "__main__":
-    import asyncio
-    from utils import Weekdays
-
-    # tz = Timezone(7, 0)
-    t = Time.now()
-    print(t)
-    t = t + timedelta(minutes=10)
-    print(t)
-    print(t >= Time.now())
-
-
-    # # print(_ymd1_to_ymd2_in_days((4, 1, 1), (5, 1, 1)))
-    # now = Time.now(tz=tz)
-    # print(hash(now))
-    # print(isinstance(now, datetime))
-    # print(now == now)
-    # print(now.replace(tzinfo=None))
-    # print(Time.now(tz=tz).isoformat())
-    
-    # print(Time.from_seconds(now.to_seconds(), tzinfo=tz) == now)
-    # print(Time.f
-    # rom_weekday(3))
-    # t = [(_, Time.from_seconds(now.to_seconds()+5, tzinfo=tz)) for _ in range(2000)]
-    # for n, i in t:
-    #     print(n, i.to_seconds_from_now())
-
-
-    # t = Time(2022, 11, 20, 22, tzinfo=tz)
-    # print(t.to_seconds_from_now())
-    # t = t.to_next_week()
-    # print(t.to_seconds_from_now())
-
-# del (
-#     _ymd1_to_ymd2_in_days, 
-#     _isleap, 
-#     # DAYS_IN_MONTHS, 
-#     NAME_OF_DAYS, 
-#     SECONDS_IN_1D, 
-#     SECONDS_IN_1W, 
-#     TIME_LIMIT
-#     )
+        raise TypeError("Expected Time instance")
