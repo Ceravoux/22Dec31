@@ -71,7 +71,7 @@ class Select(disnake.ui.StringSelect):
                     worker.cancel(res)
 
                 return await interaction.response.send_message(
-                    f"Successfully cancelled {len(self.values)} tasks.", ephemeral=True
+                    f"Successfully cancelled {len(self.values)} task(s).", ephemeral=True
                 )
 
 
@@ -96,10 +96,11 @@ class EditModal(disnake.ui.Modal):
             {"_id": ObjectId(self.custom_id)},
             {"$set": {"details": inter.text_values["Detail"]}},
         )
+        new = res.copy()
+        new.update({"details":inter.text_values["Detail"]})
 
-        print(res)
-        worker.edit(res, res)
-        await inter.response.send_message("Successfully edited.")
+        worker.edit(res, new)
+        await inter.response.send_message("Successfully edited.", ephemeral=True)
 
 
 class CreateModal(disnake.ui.Modal):

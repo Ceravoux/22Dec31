@@ -10,3 +10,4 @@ try:
 except Exception as e:
     print(f"{e}; Unable to connect to the server.")
 
+# HACK: create TTL index

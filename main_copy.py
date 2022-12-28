@@ -8,7 +8,9 @@ from instances import bot, worker
 from utils import View
 from os import getenv
 from dotenv import load_dotenv
+
 load_dotenv()
+
 
 @bot.listen()
 async def on_ready():
@@ -25,7 +27,7 @@ async def on_disconnect():
 
 @bot.listen()
 async def on_resumed():
-    print("Resuming worker")
+    print("Resuming worker...")
     if worker.is_suspended:
         worker.continue_loop()
         print(worker._sleeping.result(), worker.is_running)
@@ -147,9 +149,7 @@ async def task_list(inter: disnake.AppCmdInter):
 
     emb = disnake.Embed(
         title=f"{inter.author.name}'s tasks", colour=3046752
-    ).set_author(
-        name=inter.author.display_name, icon_url=inter.author.display_avatar
-    )
+    ).set_author(name=inter.author.display_name, icon_url=inter.author.display_avatar)
 
     schedule = {}
     tasks = []
@@ -172,9 +172,7 @@ async def task_list(inter: disnake.AppCmdInter):
         if not wd in schedule.keys():
             schedule[wd] = []
 
-        schedule[wd].append(
-            (i["_id"], f'{i["time"].time()} - {i["details"]}\n')
-        )
+        schedule[wd].append((i["_id"], f'{i["time"].time()} - {i["details"]}\n'))
 
     string = ""
     schedule = sorted(schedule.items(), key=lambda x: Weekdays[x[0]])
@@ -197,6 +195,7 @@ async def task_list(inter: disnake.AppCmdInter):
     await inter.response.send_message(
         embed=emb, ephemeral=True, view=View(tasks, schedule)
     )
+
 
 @bot.slash_command(guild_ids=[1048908479202594878])
 async def help(inter: disnake.AppCmdInter):
@@ -236,7 +235,6 @@ HelpEmbed.add_field(
     "this service, please contact Vallery#0627",
 )
 HelpEmbed.add_field(name="ToS", value="...")
-
 
 
 bot.run(getenv("TOKEN"))

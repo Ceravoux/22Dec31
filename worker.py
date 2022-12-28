@@ -37,34 +37,24 @@ class Worker:
     def is_running(self):
         return self._is_running
 
-    def check(self, other):
-        print(self._current_task, "------------COMPARE-------------", other)
-        
+    def check(self, other):        
         if not self._is_running:
             self.run()
             return
 
         if not self._current_task:
-            print(1)
             self._current_task.append(other)
 
         elif other["posix_time"] < self._current_task[0]["posix_time"]:
-            print(2)
             self._sleeping.cancel()
 
         elif other["posix_time"] == self._current_task[0]["posix_time"]:
-            print(3)
             if self._sleeping.done():
                 self._decide_to_do(other)
             else:
                 self._current_task.append(other)
-            
-        # elif other["posix_time"] - self._current_task[0]["posix_time"] < 5:
-        #     self.current_task.append(other)
-
 
     async def _get_tasks(self):
-        print("get task")
         self._current_task = []
 
         async for i in database.find({"completed": False}).sort("posix_time", 1):
@@ -79,8 +69,6 @@ class Worker:
             self._current_task[0]["posix_time"],
             tzinfo=Timezone.from_string_offset(self._current_task[0]["timezone"]),
         )
-        print("end get_task")
-        print("current", self._current_task)
 
     def run(self) -> asyncio.Task:
         if self._is_running:
@@ -112,7 +100,6 @@ class Worker:
                 pass
 
             else:
-                print("current tasks:", self._current_task)
                 try:
                     for i in self._current_task:
                         await self._decide_to_do(i)
@@ -147,13 +134,11 @@ class Worker:
         )
 
     def cancel(self, task):
-        task = list(task)
-        for i in task:
-            if i["posix_time"] == self._time.to_seconds():
-                self._current_task.remove(i)
-                # if it becomes empty
-                if not self._current_task:
-                    return self._sleeping.cancel()
+        if task["posix_time"] == self._time.to_seconds():
+            self._current_task.remove(task)
+            # if it becomes empty
+            if not self._current_task:
+                self._sleeping.cancel()
 
     def edit(self, task, new):
         if task["posix_time"] == self._time.to_seconds():
@@ -179,4 +164,3 @@ class Worker:
 
 async def call():
     print("call at", Time.now())
-
