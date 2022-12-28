@@ -30,6 +30,14 @@ def create_random_Schema(once=True):
     )
 
 
+def format_schedule(time, details) -> str:
+    return f"{time} - {details}\n"
+
+
+def format_task(time, details, completed) -> str:
+    return "{2} {0} - {1}\n".format(time, details, "🟢" if completed else "🔴")
+
+
 class TimezoneChoices(str, Enum):
     US_ALASKA = "UTC-09:00"
     US_LOS_ANGELES = "UTC-08:00"
@@ -48,23 +56,18 @@ class TimezoneChoices(str, Enum):
 
 
 class View(disnake.ui.View):
-    def __init__(
-        self, 
-        schedule: list[tuple[ObjectId, str]] = None, 
-        task: list[tuple[ObjectId, str]] = None
-    ):
-        self.sched = schedule
-        self.task = task
+    def __init__(self, worker):
+        self._worker = worker
         super().__init__(timeout=90)
 
     @disnake.ui.string_select(
         placeholder="Available actions.",
         options=[
             disnake.SelectOption(label="Create New Task", value="create"),
-            disnake.SelectOption(label="Edit Task", value="edittask"),
-            disnake.SelectOption(label="Cancel Task", value="deletetask"),
-            disnake.SelectOption(label="Edit Schedule", value="editschedule"),
-            disnake.SelectOption(label="Cancel Schedule", value="deleteschedule"),
+            # disnake.SelectOption(label="Edit Task", value="edittask"),
+            # disnake.SelectOption(label="Cancel Task", value="deletetask"),
+            # disnake.SelectOption(label="Edit Schedule", value="editschedule"),
+            # disnake.SelectOption(label="Cancel Schedule", value="deleteschedule"),
         ],
     )
     async def callback(
@@ -73,33 +76,37 @@ class View(disnake.ui.View):
         match option.values[0]:
             case "create":
                 await inter.response.send_modal(CreateModal())
-            case "edittask" | "deletetask":
-                if not self.task:
-                    return
+
+            case "edittask" | "canceltask":
                 await inter.response.defer(with_message=False)
+                tasklist = await DATABASE.find(
+                    {"user": inter.author.id, "once": True}
+                ).to_list(25)
+
                 return await inter.edit_original_response(
-                    view=self.add_item(
-                        Select(option.values[0][:-4], self.task)
-                    )
+                    view=self.add_item(Select(option.values[0][:-4], tasklist, self._worker))
                 )
-            case "editschedule" | "deleteschedule":
-                if not self.sched:
-                    return
+            case "editschedule" | "cancelschedule":
                 await inter.response.defer(with_message=False)
+                tasklist = await DATABASE.find(
+                    {"user": inter.author.id, "once": False}
+                ).to_list(25)
+
                 return await inter.edit_original_response(
-                    view=self.add_item(
-                        Select(option.values[0][:-8], self.sched)
-                    )
+                    view=self.add_item(Select(option.values[0][:-8], tasklist, self._worker))
                 )
 
 
 class Select(disnake.ui.StringSelect):
-    def __init__(self, type: str, lists: list[tuple[ObjectId, str]]):
-
+    def __init__(self, type: str, lists: list[dict[Schema]], worker):
+        self._worker = worker
+        self._lists = lists
         super().__init__(
             options=[
-                disnake.SelectOption(label=i[1], value=str(i[0])) 
-                for i in lists
+                disnake.SelectOption(
+                    label=format_schedule(i["time"], i["details"]), value=str(n)
+                )
+                for n, i in enumerate(lists)
             ]
             or ["None"],
             custom_id=type,
@@ -108,26 +115,31 @@ class Select(disnake.ui.StringSelect):
         )
 
     async def callback(self, interaction: disnake.AppCmdInter):
+        self._lists = [self._lists[i] for i in map(int, self.values)]
+
         match self.custom_id:
             case "edit":
                 return await interaction.response.send_modal(
-                    EditModal(self.values[0])
-                )
-            case "delete":
+                    EditModal(self._lists[0], self._worker))
+
+            case "cancel":
+                self._worker.cancel(self._lists)
                 res = await DATABASE.delete_many(
-                    {"_id": {"$in": [ObjectId(i) for i in self.values]}}
+                    {"_id": {"$in": [i["_id"] for i in self._lists]}}
                 )
                 return await interaction.response.send_message(
-                    f"Successfully cancelled {res.deleted_count} tasks.",
-                    ephemeral=True
+                    f"Successfully cancelled {res.deleted_count} tasks.", ephemeral=True
                 )
 
 
 class EditModal(disnake.ui.Modal):
-    def __init__(self, _id):
+    def __init__(self, data, worker):
+        self._data = data
+        self._worker = worker
         super().__init__(
             title="Edit",
-            custom_id=_id,
+            custom_id="edit",
+            timeout=60,
             components=[
                 disnake.ui.TextInput(
                     label="Detail",
@@ -140,16 +152,18 @@ class EditModal(disnake.ui.Modal):
         )
 
     async def edit(self, inter: disnake.ModalInteraction):
+        new = self._data.copy()
+        new.update({"details": inter.text_values["Detail"]})
 
-        await DATABASE.update_one(
-            {"_id": ObjectId(self.custom_id)}, 
-            {"$set": {"details": inter.text_values["Detail"]}}
-        )
+        await DATABASE.update_one(self.data, new)
+
+        self._worker.edit(self._data, new)
         await inter.response.send_message("Successfully edited.")
 
 
 class CreateModal(disnake.ui.Modal):
-    def __init__(self):
+    def __init__(self, worker):
+        self._worker = worker
         super().__init__(
             title="Create",
             components=[
@@ -162,7 +176,7 @@ class CreateModal(disnake.ui.Modal):
                     max_length=9,
                 ),
                 disnake.ui.TextInput(
-                    label="Date (YYYY/MM/DD or MM/DD) or \"today\"",
+                    label='Date (YYYY/MM/DD or MM/DD) or "today"',
                     custom_id="Date",
                     style=disnake.TextInputStyle.short,
                     min_length=3,
@@ -196,9 +210,11 @@ class CreateModal(disnake.ui.Modal):
                 once=True,
             )
         except Exception as e:
-            return await inter.response.send_message(
-                e, ephemeral=True)
+            return await inter.response.send_message(e, ephemeral=True)
         else:
             await DATABASE.insert_one(data.to_db())
+            self._worker.check(data.to_db())
+
             return await inter.response.send_message(
-                "Successfully created.", ephemeral=True)
+                "Successfully created.", ephemeral=True
+            )
