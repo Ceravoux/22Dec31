@@ -161,13 +161,13 @@ class MyCogs(commands.Cog):
                 )
                 continue
 
-            wd = str(i["time"])[:3]
+            wd = i["time"].weekday
             if not wd in schedule.keys():
-                schedule[wd] = [(i["_id"], f'{i["time"].time()} - {i["details"]}\n')]
-            else:
-                schedule[wd].append(
-                    (i["_id"], f'{i["time"].time()} - {i["details"]}\n')
-                )
+                schedule[wd] = []
+
+            schedule[wd].append(
+                (i["_id"], f'{i["time"].time()} - {i["details"]}\n')
+            )
 
         string = ""
         schedule = sorted(schedule.items(), key=lambda x: Weekdays[x[0]])
@@ -193,6 +193,7 @@ class MyCogs(commands.Cog):
 
     @commands.slash_command(guild_ids=[1048908479202594878])
     async def help(self, inter:disnake.AppCmdInter):
+        """Shows some information about the bot."""
         embed = HelpEmbed.copy()
         return await inter.response.send_message(embed=embed, ephemeral=True)
 
