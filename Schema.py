@@ -49,39 +49,32 @@ class Schema:
             raise ValueError(
                 f"Schema(): ``once`` must be str, not {type(once).__name__!r}"
             )
-        if (not isinstance(weekday, int)) and once is False:
+        if once is False and (not isinstance(weekday, int)):
             raise ValueError(
                 f"Schema(): ``weekday`` must be int or weekday is specified, but ``once`` is not False."
             )
-        if (not isinstance(date, str)) and once is True:
+        if once is True and (not isinstance(date, str)):
             raise ValueError(
                 f"Schema(): ``date`` must be str or date is specified, but ``once`` is not True."
             )
 
         try:
-            self.timezone = check_timezone(timezone)
+            self.timezone = Timezone.from_string_offset(check_timezone(timezone))
 
-            now = Time.now()
-            max = Time.from_seconds(now.to_seconds() + TIME_LIMIT * 86400)
+            now = Time.now(tz=self.timezone)
+            max = Time.from_seconds(
+                now.to_seconds() + TIME_LIMIT * 86400, tzinfo=self.timezone
+            )
 
             time = check_time(time)
             if once:
                 date = check_date(date, (now.year, now.month, now.day))
-                self.time = Time(
-                    *date, 
-                    *time, 
-                    tzinfo=Timezone.from_string_offset(self.timezone)
-                )
+                self.time = Time(*date, *time, tzinfo=self.timezone)
             else:
-                self.time = Time.from_weekday(
-                    weekday, 
-                    *time, 
-                    tzinfo=Timezone.from_string_offset(self.timezone)
-                )
+                self.time = Time.from_weekday(weekday, *time, tzinfo=self.timezone)
 
-            assert now < self.time - self.time.utcoffset() < max, \
-                f"Time must be within {now} and {max}"
-        
+            assert now < self.time < max, f"Time must be within {now} and {max}"
+
         except Exception as e:
             raise e
 
@@ -90,7 +83,7 @@ class Schema:
         self.details = details
         self.once = once
         self.posix_time = self.time.to_seconds()
-
+        self.timezone = str(self.timezone)
         # whether the task is completed
         self.completed = False
 

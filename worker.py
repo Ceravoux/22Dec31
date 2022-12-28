@@ -2,7 +2,7 @@
 
 import asyncio
 from tm import Time, Timezone
-from database import DATABASE
+from database import database
 
 
 class Worker:
@@ -67,7 +67,7 @@ class Worker:
         print("get task")
         self._current_task = []
 
-        async for i in DATABASE.find({"completed": False}).sort("posix_time", 1):
+        async for i in database.find({"completed": False}).sort("posix_time", 1):
             self.check(i)
 
         # maybe there is no data in db
@@ -129,14 +129,14 @@ class Worker:
         user = await self.bot.get_or_fetch_user(task["user"])
         # in case user is banned
         if not user:
-            self._to_do.append(DATABASE.delete_many({"user": user.id}))
+            self._to_do.append(database.delete_many({"user": user.id}))
             return
         if task["once"]:
-            self._to_do.append(DATABASE.delete_one(task))
+            self._to_do.append(database.delete_one(task))
         else:
             t = self._time.to_next_week()
             self._to_do.append(
-                DATABASE.update_one(
+                database.update_one(
                     task, {"$set": {"time": t, "posix_time": t.to_seconds()}}
                 )
             )
@@ -179,3 +179,4 @@ class Worker:
 
 async def call():
     print("call at", Time.now())
+

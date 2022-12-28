@@ -366,3 +366,20 @@ class Timezone(tzinfo):
                 raise ValueError("fromutc: dt.tzinfo is not self")
             return t + self.utcoffset()
         raise TypeError(f"fromutc(): expected Time, given {type(t).__class__.__name__!r}")
+
+
+class TimezoneChoices(str, Enum):
+    US_ALASKA = "UTC-09:00"
+    US_LOS_ANGELES = "UTC-08:00"
+    US_MEXICO = "UTC-06:00"
+    US_NEW_YORK = "UTC-05:00"
+    US_WASHINGTON_DC = "UTC-03:00"
+    EU_LONDON = EU_REYKJAVIK = "UTC+00:00"
+    EU_PARIS = "UTC+01:00"
+    ASIA_DUBAI = "UTC+04:00"
+    ASIA_INDIA = "UTC+05:30"
+    ASIA_JAKARTA = "UTC+07:00"
+    ASIA_BEIJING = ASIA_KUALA_LUMPUR = ASIA_SINGAPORE = ASIA_MANILA = "UTC+08:00"
+    ASIA_SEOUL = ASIA_TOKYO = "UTC+09:00"
+    AU_QUEENSLAND = "UTC+10:00"
+    NEW_ZEALAND = "UTC+12:00"
