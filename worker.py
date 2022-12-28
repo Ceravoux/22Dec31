@@ -9,162 +9,171 @@ class Worker:
     def __init__(self, *, loop: asyncio.AbstractEventLoop, bot):
         self.loop = loop
 
-        self.current_task = []
-        self.next_task = []
-        self.to_do = []
+        self._current_task = []
+        self._to_do = []
 
-        self.time: Time
-        self.sleeping: asyncio.Future
-        self.waker: asyncio.TimerHandle
+        self._time: Time
+        self._sleeping: asyncio.Future
+        self._waker: asyncio.TimerHandle
 
-        self.is_suspended = True
-        self.is_running = False
+        self._is_suspended = True
+        self._is_running = False
 
         self.bot = bot
 
+    @property
+    def current_task(self):
+        return self._current_task
+    
+    @property
+    def time(self):
+        return self._time
+
+    @property
+    def is_suspended(self):
+        return self._is_suspended
+
+    @property
+    def is_running(self):
+        return self._is_running
+
     def check(self, other):
-        print(self.current_task, "------------COMPARE-------------", other)
+        print(self._current_task, "------------COMPARE-------------", other)
         
-        if not self.is_running:
+        if not self._is_running:
             self.run()
             return
 
-        if not self.current_task:
+        if not self._current_task:
             print(1)
-            self.current_task.append(other)
+            self._current_task.append(other)
 
-        elif other["posix_time"] < self.current_task[0]["posix_time"]:
+        elif other["posix_time"] < self._current_task[0]["posix_time"]:
             print(2)
-            self.sleeping.cancel()
+            self._sleeping.cancel()
 
-        elif other["posix_time"] == self.current_task[0]["posix_time"]:
+        elif other["posix_time"] == self._current_task[0]["posix_time"]:
             print(3)
-            if self.sleeping.done():
+            if self._sleeping.done():
                 self._decide_to_do(other)
             else:
-                self.current_task.append(other)
-
-        elif (not self.next_task) or other["posix_time"] < self.next_task[0]["posix_time"]:
-            print(4)
-            self.next_task = [other]
-
-        elif other["posix_time"] == self.next_task[0]["posix_time"]:
-            print(5)
-            self.next_task.append(other)
+                self._current_task.append(other)
+            
+        # elif other["posix_time"] - self._current_task[0]["posix_time"] < 5:
+        #     self.current_task.append(other)
 
 
     async def _get_tasks(self):
         print("get task")
-        self.current_task = [] or self.next_task
-        self.next_task = []
+        self._current_task = []
 
         async for i in DATABASE.find({"completed": False}).sort("posix_time", 1):
             self.check(i)
 
         # maybe there is no data in db
-        if not self.current_task:
-            self.is_running = False
+        if not self._current_task:
+            self._is_running = False
             return
 
-        self.time = Time.from_seconds(
-            self.current_task[0]["posix_time"],
-            tzinfo=Timezone.from_string_offset(self.current_task[0]["timezone"]),
+        self._time = Time.from_seconds(
+            self._current_task[0]["posix_time"],
+            tzinfo=Timezone.from_string_offset(self._current_task[0]["timezone"]),
         )
         print("end get_task")
-        print("current", self.current_task)
-        print("next", self.next_task)
+        print("current", self._current_task)
 
     def run(self) -> asyncio.Task:
-        if self.is_running:
+        if self._is_running:
             print("Worker is already running!")
             return
-        self.is_running = True
-        self.is_suspended = False
+        self._is_running = True
+        self._is_suspended = False
         return self.loop.create_task(self._run())
 
     async def _run(self):
 
         await self._get_tasks()
 
-        while self.is_running:
+        while self._is_running:
             try:
-                self.sleeping = self.loop.create_future()
-                self.waker = self.loop.call_later(
-                    self.time.to_seconds_from_now(), self.sleeping.set_result, 1
+                self._sleeping = self.loop.create_future()
+                self._waker = self.loop.call_later(
+                    self._time.to_seconds_from_now(), self._sleeping.set_result, 1
                 )
-                await self.sleeping
+                await self._sleeping
 
             except Exception as e:
                 # in case there's an error with
                 # time.to_seconds_from_now()
                 print("in _run():", e)
-                continue
+                pass
 
             except asyncio.CancelledError:
                 pass
-            else:
-                print("current tasks:", self.current_task)
-                print("next tasks:", self.next_task)
-                try:
-                    for i in self.current_task:
-                        await self._decide_to_do(i)
 
-                    await asyncio.gather(call(), *self.to_do)
+            else:
+                print("current tasks:", self._current_task)
+                try:
+                    for i in self._current_task:
+                        await self._decide_to_do(i)
+                    await asyncio.gather(call(), *self._to_do)
+
                 except Exception as e:
                     raise e
-                self.to_do = []
+
             finally:
+                self._to_do = []
                 await self._get_tasks()
 
     async def _decide_to_do(self, task):
         user = await self.bot.get_or_fetch_user(task["user"])
         # in case user is banned
         if not user:
-            self.to_do.append(DATABASE.delete_many({"user": user.id}))
+            self._to_do.append(DATABASE.delete_many({"user": user.id}))
             return
         if task["once"]:
-            self.to_do.append(DATABASE.delete_one(task))
+            self._to_do.append(DATABASE.delete_one(task))
         else:
-            t = self.time.to_next_week()
-            self.to_do.append(
+            t = self._time.to_next_week()
+            self._to_do.append(
                 DATABASE.update_one(
                     task, {"$set": {"time": t, "posix_time": t.to_seconds()}}
                 )
             )
-        self.to_do.append(
+        self._to_do.append(
             user.send(
                 f'{Time.now(tz=Timezone.from_string_offset(task["timezone"]))}: {task["details"]}'
             )
         )
 
     def cancel(self, task):
-        if task["posix_time"] == self.time.to_seconds():
-            self.current_task.remove(task)
-            if not self.current_task:
-                self.sleeping.cancel()
-        else:
-            self.to_do.append(DATABASE.delete_one(task))
+        task = list(task)
+        for i in task:
+            if i["posix_time"] == self._time.to_seconds():
+                self._current_task.remove(i)
+                # if it becomes empty
+                if not self._current_task:
+                    return self._sleeping.cancel()
 
     def edit(self, task, new):
-        if task["posix_time"] == self.time.to_seconds():
-            self.current_task.remove(task)
-            self.current_task.append(new)
-        else:
-            self.to_do.append(DATABASE.update_one(task, new))
+        if task["posix_time"] == self._time.to_seconds():
+            self._current_task.remove(task)
+            self._current_task.append(new)
+
 
     def suspend(self):
-        if not self.is_running or self.is_suspended:
+        if not self._is_running or self._is_suspended:
             return
-        if not self.sleeping.done():
-            self.waker.cancel()
-            self.is_suspended = True
-        self.is_running = False
+        if not self._sleeping.done():
+            self._waker.cancel()
+            self._is_suspended = True
+        self._is_running = False
 
     def continue_loop(self):
-        if self.is_running:
+        if self._is_running:
             return
-        if not self.sleeping.done():
-            self.sleeping.set_result(1)
+        if not self._sleeping.done():
+            self._sleeping.set_result(1)
         self.run()
 
 
