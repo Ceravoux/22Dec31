@@ -1,5 +1,5 @@
 import disnake
-from Schema import Schema, ObjectId
+from schema import Schema, ObjectId
 from database import database
 from instances import worker
 

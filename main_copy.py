@@ -1,7 +1,7 @@
 import disnake
 from disnake.ext.commands import String
 import asyncio
-from Schema import Schema
+from schema import Schema
 from tm import Time, Timezone, Weekdays, TimezoneChoices
 from database import database
 from instances import bot, worker
