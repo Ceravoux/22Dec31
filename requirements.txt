@@ -1,4 +1,5 @@
 pymongo==4.1.1
+pymongo[srv]
 motor==3.0.0
 disnake==2.7.0
 python-dotenv==0.20
