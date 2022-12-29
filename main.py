@@ -12,9 +12,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-@bot.listen()
-async def on_ready():
-    await database.drop()
+# @bot.listen()
+# async def on_ready():
+#     await database.drop()
 
 
 @bot.listen()
@@ -51,7 +51,7 @@ async def on_resumed():
             continue
 
 
-@bot.slash_command(guild_ids=[1048908479202594878])
+@bot.slash_command()
 async def create_schedule(
     inter: disnake.AppCmdInter,
     timezone: TimezoneChoices,
@@ -81,12 +81,12 @@ async def create_schedule(
     except ValueError as e:
         return await inter.response.send_message(e.args[0])
 
-    # exists = await database.find_one({"user":data.user, "posix_time":time})
-    # if exists:
-    #     return await inter.response.send_message(
-    #         f"You have already created a schedule at {data.time}, "
-    #         "you can edit the schedule or cancel it and create a new one"
-    #     )
+    exists = await database.find_one({"user":data.user, "posix_time":time})
+    if exists:
+        return await inter.response.send_message(
+            f"You have already created a schedule at {data.time}, "
+            "you can edit the schedule or cancel it and create a new one"
+        )
 
     await asyncio.gather(
         database.insert_one(data.to_db()),
@@ -96,7 +96,7 @@ async def create_schedule(
     worker.check(data.to_db())
 
 
-@bot.slash_command(guild_ids=[1048908479202594878])
+@bot.slash_command()
 async def create_task(
     inter: disnake.AppCmdInter,
     timezone: TimezoneChoices,
@@ -126,12 +126,12 @@ async def create_task(
     except ValueError as e:
         return await inter.response.send_message(e.args[0])
 
-    # exists = await database.find_one({"user":data.user, "posix_time":time})
-    # if exists:
-    #     return await inter.response.send_message(
-    #         f"You have already created a task at {data.time}, "
-    #         "you can edit the task or cancel it and create a new one"
-    #     )
+    exists = await database.find_one({"user":data.user, "posix_time":time})
+    if exists:
+        return await inter.response.send_message(
+            f"You have already created a task at {data.time}, "
+            "you can edit the task or cancel it and create a new one"
+        )
 
     await asyncio.gather(
         database.insert_one(data.to_db()),
@@ -141,7 +141,7 @@ async def create_task(
     worker.check(data.to_db())
 
 
-@bot.slash_command(guild_ids=[1048908479202594878])
+@bot.slash_command()
 async def task_list(inter: disnake.AppCmdInter):
     """
     Displays your list of schedules and tasks.
@@ -197,7 +197,7 @@ async def task_list(inter: disnake.AppCmdInter):
     )
 
 
-@bot.slash_command(guild_ids=[1048908479202594878])
+@bot.slash_command()
 async def help(inter: disnake.AppCmdInter):
     """Shows some information about the bot."""
     embed = HelpEmbed.copy()
@@ -208,10 +208,10 @@ HelpEmbed = disnake.Embed(title="Help", colour=588228)
 HelpEmbed.add_field(
     name="Purpose",
     value="Organise your time with schedules(weekly reminders) "
-    "and tasks(one-time reminder). You can mark tasks as "
-    "done if you do not wish the bot to remind you about "
-    "it. However, they cannot be kept forever, and are "
-    "removed once their time is due.",
+    "and tasks(one-time reminder). [To be implemented] ||"
+    "You can mark tasks as done if you do not wish the bot " 
+    "to remind you about it. However, they cannot be kept "
+    "forever, and are removed once their time is due. ||",
 )
 HelpEmbed.add_field(
     name="How to use",
