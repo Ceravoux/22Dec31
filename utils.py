@@ -4,7 +4,13 @@ from database import database
 from instances import worker
 
 
-class View(disnake.ui.View):
+def format_task(i):
+    return i["_id"], "{2} {0} - {1}\n".format(
+        i["time"], i["details"], "🟢" if i["completed"] else "🔴"
+    )
+
+
+class taskListView(disnake.ui.View):
     def __init__(
         self,
         task: list[tuple[ObjectId, str]],
@@ -38,8 +44,7 @@ class View(disnake.ui.View):
     ):
         match option.values[0]:
             case "create":
-                await inter.response.send_modal(CreateModal())
-
+                await inter.response.send_modal(CreateModal(self))
             case "edittask" | "canceltask":
                 await inter.response.defer(with_message=False)
                 return await inter.edit_original_response(
@@ -62,21 +67,40 @@ class Select(disnake.ui.StringSelect):
         )
 
     async def callback(self, interaction: disnake.AppCmdInter):
+        print(self.view.children)
+        self.view.children = [i for i in self.view.children if i != self]
+        print(self.view.children)
         match self.custom_id:
             case "edit":
-                return await interaction.response.send_modal(EditModal(self.values[0]))
+                await interaction.response.send_modal(
+                    EditModal(self.values[0], self.view)
+                )
             case "cancel":
                 for i in self.values:
                     res = await database.find_one_and_delete({"_id": ObjectId(i)})
                     worker.cancel(res)
 
-                return await interaction.response.send_message(
-                    f"Successfully cancelled {len(self.values)} task(s).", ephemeral=True
+                await interaction.response.send_message(
+                    f"Successfully cancelled {len(self.values)} task(s).",
+                    ephemeral=True,
+                )
+                await interaction.edit_original_response(view=self.view)
+            case "markasdone":
+                for i in self.values:
+                    res = await database.find_one_and_update(
+                        {"_id": ObjectId(i)}, {"$set": {"completed": True}}
+                    )
+                    worker.cancel(res)
+                await interaction.response.defer(with_message=False)
+                await interaction.edit_original_response(
+                    f"Successfully marked {len(self.values)} task(s) as done.",
+                    view=None,
                 )
 
 
 class EditModal(disnake.ui.Modal):
-    def __init__(self, _id):
+    def __init__(self, _id, view):
+        self.view = view
         super().__init__(
             title="Edit",
             custom_id=_id,
@@ -97,14 +121,16 @@ class EditModal(disnake.ui.Modal):
             {"$set": {"details": inter.text_values["Detail"]}},
         )
         new = res.copy()
-        new.update({"details":inter.text_values["Detail"]})
+        new.update({"details": inter.text_values["Detail"]})
 
         worker.edit(res, new)
         await inter.response.send_message("Successfully edited.", ephemeral=True)
+        await inter.edit_original_response(view=self.view)
 
 
 class CreateModal(disnake.ui.Modal):
-    def __init__(self):
+    def __init__(self, view):
+        self.view = view
         super().__init__(
             title="Create",
             components=[
@@ -155,6 +181,5 @@ class CreateModal(disnake.ui.Modal):
         else:
             await database.insert_one(data.to_db())
             worker.check(data.to_db())
-            return await inter.response.send_message(
-                "Successfully created.", ephemeral=True
-            )
+            await inter.response.send_message("Successfully created.", ephemeral=True)
+            await inter.edit_original_response(view=self.view)

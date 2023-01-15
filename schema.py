@@ -4,17 +4,17 @@ from bson.objectid import ObjectId
 
 class Schema:
     """
-    Creates a complete schema from user, details and time field.
+    Creates a complete schema from user, details timezone, time, and `once` field. E.g.
 
     {
         _id: ObjectId(12byte),
-        user: 123456789012345678
+        user: 123456789012345678,
         details: "sleep",
         timezone: "UTC+00",
-        time: Time(2022, 12, 17, 17, 54, 9, tzinfo=Timezone())
+        time: Time(2022, 12, 17, 17, 54, 9, tzinfo=Timezone()),
         posix_time: 1234567890,
-        once: True
-        complete: False
+        once: True,
+        completed: False
     }
     """
 
@@ -73,7 +73,8 @@ class Schema:
             else:
                 self.time = Time.from_weekday(weekday, *time, tzinfo=self.timezone)
 
-            assert now < self.time < max, f"Time must be within {now} and {max}"
+            if not now < self.time < max:
+                raise ValueError(f"Time must be within {now} and {max}")
 
         except Exception as e:
             raise e

@@ -3,7 +3,7 @@
 import asyncio
 from tm import Time, Timezone
 from database import database
-
+import traceback, sys
 
 class Worker:
     def __init__(self, *, loop: asyncio.AbstractEventLoop, bot):
@@ -12,10 +12,10 @@ class Worker:
         self._current_task = []
         self._to_do = []
 
-        self._time: Time
-        self._sleeping: asyncio.Future
-        self._waker: asyncio.TimerHandle
-
+        self._time: Time = None
+        self._sleeping: asyncio.Future = self.loop.create_future()
+        self._waker: asyncio.TimerHandle = None
+        self.worker: asyncio.Task = None
         self._is_suspended = True
         self._is_running = False
 
@@ -70,14 +70,6 @@ class Worker:
             tzinfo=Timezone.from_string_offset(self._current_task[0]["timezone"]),
         )
 
-    def run(self) -> asyncio.Task:
-        if self._is_running:
-            print("Worker is already running!")
-            return
-        self._is_running = True
-        self._is_suspended = False
-        return self.loop.create_task(self._run())
-
     async def _run(self):
 
         await self._get_tasks()
@@ -91,22 +83,22 @@ class Worker:
                 await self._sleeping
 
             except Exception as e:
-                # in case there's an error with
-                # time.to_seconds_from_now()
-                print("in _run():", e)
+                print(f"Unhandled exception in internal background task {self.coro.__name__!r}.")
+                traceback.print_exception(
+                    type(e),
+                    e,
+                    e.__traceback__,
+                    file=sys.stderr,
+                )
                 pass
 
             except asyncio.CancelledError:
                 pass
 
             else:
-                try:
-                    for i in self._current_task:
-                        await self._decide_to_do(i)
-                    await asyncio.gather(call(), *self._to_do)
-
-                except Exception as e:
-                    raise e
+                for i in self._current_task:
+                    await self._decide_to_do(i)
+                await asyncio.gather(call(), *self._to_do)
 
             finally:
                 self._to_do = []
@@ -134,33 +126,41 @@ class Worker:
         )
 
     def cancel(self, task):
-        if task["posix_time"] == self._time.to_seconds():
+        if self._time and task["posix_time"] == self._time.to_seconds():
             self._current_task.remove(task)
-            # if it becomes empty
+
+            # if it becomes empty cancel sleep 
+            # so we dont wait for nothing
             if not self._current_task:
                 self._sleeping.cancel()
 
     def edit(self, task, new):
-        if task["posix_time"] == self._time.to_seconds():
+        if self._time and task["posix_time"] == self._time.to_seconds():
             self._current_task.remove(task)
             self._current_task.append(new)
-
 
     def suspend(self):
         if not self._is_running or self._is_suspended:
             return
         if not self._sleeping.done():
             self._waker.cancel()
-            self._is_suspended = True
+        self._is_suspended = True
         self._is_running = False
 
     def continue_loop(self):
         if self._is_running:
             return
-        if not self._sleeping.done():
-            self._sleeping.set_result(1)
         self.run()
 
+    def run(self):
+        if self._is_running:
+            print("Worker is already running!")
+            return
+        self._is_running = True
+        self._is_suspended = False
+        if self.worker is not None:
+            self.worker.cancel("continue_loop")
+        self.worker = self.loop.create_task(self._run())
 
 async def call():
     print("call at", Time.now())

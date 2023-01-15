@@ -5,16 +5,11 @@ from schema import Schema
 from tm import Time, Timezone, Weekdays, TimezoneChoices
 from database import database
 from instances import bot, worker
-from utils import View
+from utils import taskListView, Select, format_task
 from os import getenv
 from dotenv import load_dotenv
 
 load_dotenv()
-
-
-# @bot.listen()
-# async def on_ready():
-#     await database.drop()
 
 
 @bot.listen()
@@ -23,32 +18,36 @@ async def on_disconnect():
         worker.suspend()
         print(worker.is_suspended)
     # XXX freeze database
+    print("disconnected")
 
 
 @bot.listen()
-async def on_resumed():
+async def on_ready():
     print("Resuming worker...")
     if worker.is_suspended:
         worker.continue_loop()
-        print(worker._sleeping.result(), worker.is_running)
+        print(worker.is_running)
 
     # Some datas could be called while the bot
     # was dead, so update the data to keep up
     # with the present.
-    now = Time.now()
-    later = Time.from_seconds(now.to_seconds() + 60)
+    # now = Time.now()
+    # later = Time.from_seconds(now.to_seconds() + 60)
 
-    async for i in database.find({"time": {"$lt": now}}):
-        to_later = i.copy()
-        to_later.update({"posix_time": later.to_seconds(), "once": True})
-        await database.insert_one(to_later)
-
-        if not i["once"]:
-            t = Time.from_seconds(i["posix_time"]).to_next_week()
-            await database.update_one(
-                i, {"$set": {"time": t, "posix_time": t.to_seconds()}}
-            )
-            continue
+    # async for i in database.find({"time": {"$lt": now}}):
+    #     print(i)
+    #     to_later = i.copy()
+    #     to_later.update({"posix_time": later.to_seconds(), "once": True})
+    #     await database.insert_one(to_later)
+    #     print(to_later)
+    #     if not i["once"]:
+    #         t = Time.from_seconds(i["posix_time"]).to_next_week()
+    #         result = await database.update_one(
+    #             i, {"$set": {"time": t, "posix_time": t.to_seconds()}}
+    #         )
+    #         print(result)
+    #         continue
+    print("end ready")
 
 
 @bot.slash_command()
@@ -81,19 +80,19 @@ async def create_schedule(
     except ValueError as e:
         return await inter.response.send_message(e.args[0])
 
-    exists = await database.find_one({"user":data.user, "posix_time":time})
+    exists = await database.find_one({"user": data.user, "posix_time": time})
     if exists:
         return await inter.response.send_message(
             f"You have already created a schedule at {data.time}, "
             "you can edit the schedule or cancel it and create a new one"
         )
-
+    data = data.to_db()
     await asyncio.gather(
-        database.insert_one(data.to_db()),
+        database.insert_one(data),
         inter.response.send_message("Successfully scheduled!", ephemeral=True),
     )
 
-    worker.check(data.to_db())
+    worker.check(data)
 
 
 @bot.slash_command()
@@ -126,19 +125,19 @@ async def create_task(
     except ValueError as e:
         return await inter.response.send_message(e.args[0])
 
-    exists = await database.find_one({"user":data.user, "posix_time":time})
+    exists = await database.find_one({"user": data.user, "posix_time": time})
     if exists:
         return await inter.response.send_message(
             f"You have already created a task at {data.time}, "
             "you can edit the task or cancel it and create a new one"
         )
-
+    data = data.to_db()
     await asyncio.gather(
-        database.insert_one(data.to_db()),
+        database.insert_one(data),
         inter.response.send_message("Successfully scheduled!", ephemeral=True),
     )
 
-    worker.check(data.to_db())
+    worker.check(data)
 
 
 @bot.slash_command()
@@ -158,14 +157,7 @@ async def task_list(inter: disnake.AppCmdInter):
         tz = Timezone.from_string_offset(i["timezone"])
         i["time"] = Time.from_seconds(i["posix_time"], tzinfo=tz)
         if i["once"]:
-            tasks.append(
-                (
-                    i["_id"],
-                    "{2} {0} - {1}\n".format(
-                        i["time"], i["details"], "🟢" if i["completed"] else "🔴"
-                    ),
-                )
-            )
+            tasks.append(format_task(i))
             continue
 
         wd = i["time"].weekday
@@ -184,7 +176,9 @@ async def task_list(inter: disnake.AppCmdInter):
         string += "\n"
 
     emb.add_field(
-        name="Schedule", value=string or "You have no schedule set.", inline=False
+        name="Schedule", 
+        value=string or "You have no schedule set.", 
+        inline=False
     )
     emb.add_field(
         name="Tasks",
@@ -193,14 +187,29 @@ async def task_list(inter: disnake.AppCmdInter):
     )
 
     await inter.response.send_message(
-        embed=emb, ephemeral=True, view=View(tasks, schedule)
+        embed=emb, ephemeral=True, view=taskListView(tasks, schedule)
+    )
+
+
+@bot.slash_command()
+async def mark_as_done(inter: disnake.AppCmdInter):
+    """Marks task(s) as done so that they won't be reminded."""
+    tasks = [
+        format_task(i)
+        async for i in database.find(
+            {"user": inter.author.id, "completed": False, "once": True}
+        )
+    ]
+    await inter.response.send_message(
+        view=disnake.ui.View(timeout=90).add_item(Select("markasdone", tasks)),
+        ephemeral=True,
     )
 
 
 @bot.slash_command()
 async def help(inter: disnake.AppCmdInter):
     """Shows some information about the bot."""
-    embed = HelpEmbed.copy()
+    embed = HelpEmbed
     return await inter.response.send_message(embed=embed, ephemeral=True)
 
 
@@ -208,11 +217,12 @@ HelpEmbed = disnake.Embed(title="Help", colour=588228)
 HelpEmbed.add_field(
     name="Purpose",
     value="Organise your time with schedules(weekly reminders) "
-    "and tasks(one-time reminder). [To be implemented] ||"
-    "You can mark tasks as done if you do not wish the bot " 
+    "and tasks(one-time reminder).\n"
+    "You can mark tasks as done if you do not wish the bot "
     "to remind you about it. However, they cannot be kept "
-    "forever, and are removed once their time is due. ||",
+    "forever, and are removed once their time is due.",
 )
+
 HelpEmbed.add_field(
     name="How to use",
     value="Invoke `/create_schedule` to create a schedule, or "
